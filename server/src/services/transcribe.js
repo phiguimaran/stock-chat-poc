@@ -1,17 +1,33 @@
-import fs from 'node:fs';
-import { getOpenAIClient } from './openaiClient.js';
+import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
-export async function transcribeAudio({ filePath }) {
-  const client = getOpenAIClient();
-  const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe';
-  const file = fs.createReadStream(filePath);
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-  const transcription = await client.audio.transcriptions.create({
-    model,
-    file,
-    response_format: 'text'
-  });
+export async function transcribeAudio(file) {
+  if (!file?.buffer) {
+    throw new Error('audio buffer no disponible');
+  }
 
-  // SDK devuelve .text cuando response_format es text
-  return (transcription.text ?? transcription).toString().trim();
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `audio-${Date.now()}.webm`
+  );
+
+  fs.writeFileSync(tmpPath, file.buffer);
+
+  try {
+    const response = await client.audio.transcriptions.create({
+      file: fs.createReadStream(tmpPath),
+      model: 'whisper-1'
+    });
+
+    return response.text;
+  } finally {
+    fs.unlink(tmpPath, () => {});
+  }
 }
+

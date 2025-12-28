@@ -9,13 +9,11 @@ export async function postTexto({ texto, contexto='stock_movimientos', session_i
   return await r.json();
 }
 
-export async function postAudio({ blob, contexto='stock_movimientos', session_id='demo', user_id='demo' }) {
-  const fd = new FormData();
-  fd.append('audio', blob, 'audio.webm');
-  fd.append('contexto', contexto);
-  fd.append('session_id', session_id);
-  fd.append('user_id', user_id);
-  const r = await fetch(`${BASE}/api/mensaje`, { method: 'POST', body: fd });
+export async function postAudio(formData) {
+  const r = await fetch(`${BASE}/api/mensaje/voz`, {
+    method: 'POST',
+    body: formData
+  });
   return await r.json();
 }
 

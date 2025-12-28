@@ -1,28 +1,29 @@
-import { Router } from 'express';
+import express from 'express';
 import multer from 'multer';
-import fs from 'node:fs';
-import path from 'node:path';
 
-import { handleMensaje } from '../routes/handlers/handleMensaje.js';
-import { handleConfirmar } from '../routes/handlers/handleConfirmar.js';
-import { handleAdminList } from '../routes/handlers/handleAdminList.js';
-import { handleAdminAction } from '../routes/handlers/handleAdminAction.js';
-import { handleCorreccion } from '../routes/handlers/handleCorreccion.js';
+import { handleMensaje } from './handlers/handleMensaje.js';
+import { handleMensajeVoz } from './handlers/handleMensajeVoz.js';
+import { handleConfirmar } from './handlers/handleConfirmar.js';
+import { handleCorreccion } from './handlers/handleCorreccion.js';
+import { handleAdminList } from './handlers/handleAdminList.js';
+import { handleAdminAction } from './handlers/handleAdminAction.js';
 
-export const apiRouter = Router();
+const router = express.Router();
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-fs.mkdirSync(uploadDir, { recursive: true });
+// multer en memoria (audio chico, PoC)
+const upload = multer({ storage: multer.memoryStorage() });
 
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 25 * 1024 * 1024 } // 25MB, alineado con límites comunes
-});
+// ---- MENSAJES ----
+router.post('/mensaje', handleMensaje);
+router.post('/mensaje/voz', upload.single('audio'), handleMensajeVoz);
 
-apiRouter.post('/mensaje', upload.single('audio'), handleMensaje);
-apiRouter.post('/mensaje/confirmar', handleConfirmar);
-apiRouter.post('/mensaje/correccion', handleCorreccion);
+// ---- CONFIRMACIONES ----
+router.post('/mensaje/confirmar', handleConfirmar);
+router.post('/mensaje/corregir', handleCorreccion);
 
-// Backoffice (mínimo)
-apiRouter.get('/admin/eventos', handleAdminList);
-apiRouter.post('/admin/eventos/accion', handleAdminAction);
+// ---- ADMIN ----
+router.get('/admin/eventos', handleAdminList);
+router.post('/admin/eventos/:id/accion', handleAdminAction);
+
+export default router;
+

@@ -6,120 +6,123 @@ export default function ChatView({ contexto }) {
   const [ultimo, setUltimo] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [grabando, setGrabando] = useState(false);
+
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
 
   async function enviarTexto() {
     if (!texto.trim()) return;
     setCargando(true);
-    const r = await postTexto({ texto, contexto });
-    setUltimo(r);
-    setTexto('');
-    setCargando(false);
+    try {
+      const r = await postTexto({ texto, contexto });
+      setUltimo(r);
+      setTexto('');
+    } finally {
+      setCargando(false);
+    }
   }
 
-  async function startRec() {
+  async function iniciarGrabacion() {
+    if (grabando) return;
+
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    const mediaRecorder = new MediaRecorder(stream);
+
     chunksRef.current = [];
-    mr.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
-    mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      setCargando(true);
-      const r = await postAudio({ blob, contexto });
-      setUltimo(r);
-      setCargando(false);
-      stream.getTracks().forEach(t => t.stop());
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
     };
-    mr.start();
-    mediaRef.current = mr;
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+      const form = new FormData();
+      form.append('audio', blob, 'audio.webm');
+      form.append('contexto', contexto);
+      form.append('session_id', 'web');
+      form.append('user_id', 'web');
+
+      setCargando(true);
+      try {
+        const r = await postAudio(form);
+        setUltimo(r);
+      } finally {
+        setCargando(false);
+      }
+    };
+
+    mediaRef.current = mediaRecorder;
+    mediaRecorder.start();
     setGrabando(true);
   }
 
-  function stopRec() {
-    mediaRef.current?.stop();
+  function detenerGrabacion() {
+    if (!grabando || !mediaRef.current) return;
+    mediaRef.current.stop();
+    mediaRef.current.stream.getTracks().forEach(t => t.stop());
     setGrabando(false);
   }
 
-  async function doConfirm(accion) {
+  async function confirmarUltimo() {
     if (!ultimo?.evento_id) return;
     setCargando(true);
-    const r = await confirmar({ evento_id: ultimo.evento_id, accion });
-    setUltimo({ ...ultimo, post: r });
-    setCargando(false);
+    try {
+      const r = await confirmar(ultimo.evento_id);
+      setUltimo(r);
+    } finally {
+      setCargando(false);
+    }
   }
 
-  // Corrección rápida (MVP): toma la primera sugerencia si existe (para demo).
-  async function applyFirstSuggestion(err) {
-    const sug = err?.sugerencias?.[0];
-    if (!sug) return;
-    const campo = err.campo;
-    const index = err.index;
-    const correcciones = [{
-      index,
-      campo,
-      valor: sug.codigo,
-      alias_original: err.valor
-    }];
+  async function corregirUltimo() {
+    if (!ultimo?.evento_id) return;
     setCargando(true);
-    const r = await corregir({ evento_id: ultimo.evento_id, correcciones });
-    setUltimo({ ...ultimo, ...r, evento_id: ultimo.evento_id });
-    setCargando(false);
+    try {
+      const r = await corregir(ultimo.evento_id);
+      setUltimo(r);
+    } finally {
+      setCargando(false);
+    }
   }
 
   return (
-    <div>
-      <div style={{ display:'flex', gap:8, marginBottom: 12 }}>
-        <input
+    <div style={{ maxWidth: 600, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Card title="Mensaje">
+        <textarea
+          rows={3}
           value={texto}
-          onChange={(e)=>setTexto(e.target.value)}
-          placeholder="Escribí: mover 10 maiz del central al norte"
-          style={{ flex:1, padding: 10 }}
+          onChange={e => setTexto(e.target.value)}
+          placeholder="Escribí o usá el micrófono…"
         />
-        <button onClick={enviarTexto} disabled={cargando}>Enviar</button>
-      </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button onClick={enviarTexto} disabled={cargando}>
+            Enviar
+          </button>
+        <button
+  onClick={grabando ? detenerGrabacion : iniciarGrabacion}
+  disabled={cargando}
+>
+  {grabando ? '⏹ Detener grabación' : '🎤 Grabar voz'}
+</button>
 
-      <div style={{ display:'flex', gap:8, marginBottom: 16 }}>
-        {!grabando ? (
-          <button onClick={startRec} disabled={cargando}>🎙️ Grabar</button>
-        ) : (
-          <button onClick={stopRec} disabled={cargando}>⏹️ Parar</button>
-        )}
-        {cargando && <span>Procesando…</span>}
-      </div>
+	  </div>
+      </Card>
 
       {ultimo && (
-        <Card title="Respuesta del sistema">
-          <pre style={{ whiteSpace:'pre-wrap' }}>{JSON.stringify(ultimo, null, 2)}</pre>
+        <Card title="Sistema">
+          <pre style={{ whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(ultimo, null, 2)}
+          </pre>
 
-          {ultimo?.requiere_confirmacion && (
-            <div style={{ display:'flex', gap:8 }}>
-              <button onClick={()=>doConfirm('confirmar')}>Confirmar</button>
-              <button onClick={()=>doConfirm('cancelar')}>Cancelar</button>
+          {ultimo.requiere_confirmacion && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={confirmarUltimo} disabled={cargando}>
+                Confirmar
+              </button>
+              <button onClick={corregirUltimo} disabled={cargando}>
+                Cancelar
+              </button>
             </div>
           )}
-
-          {ultimo?.validacion?.errores?.length ? (
-            <div style={{ marginTop: 12 }}>
-              <b>Errores</b>
-              <ul>
-                {ultimo.validacion.errores.map((e, idx) => (
-                  <li key={idx}>
-                    #{e.index} {e.campo} - {e.tipo} {e.valor ? `(valor: ${e.valor})` : ''}
-                    {Array.isArray(e.sugerencias) && e.sugerencias.length > 0 && (
-                      <>
-                        {' '}| sugerencias: {e.sugerencias.map(s => s.codigo).join(', ')}
-                        {' '}
-                        <button onClick={()=>applyFirstSuggestion(e)} style={{ marginLeft: 8 }}>
-                          Aplicar 1ra sugerencia (demo)
-                        </button>
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </Card>
       )}
     </div>
@@ -128,9 +131,10 @@ export default function ChatView({ contexto }) {
 
 function Card({ title, children }) {
   return (
-    <div style={{ border:'1px solid #ddd', borderRadius: 8, padding: 12 }}>
+    <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12 }}>
       <div style={{ fontWeight: 700, marginBottom: 8 }}>{title}</div>
       {children}
     </div>
   );
 }
+

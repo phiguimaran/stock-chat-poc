@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { connectMongo } from './lib/mongo.js';
-import { apiRouter } from './routes/api.js';
+import apiRouter from './routes/api.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
