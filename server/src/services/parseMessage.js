@@ -8,31 +8,40 @@ export async function parseNaturalLanguage({ texto, contexto }) {
   const system = [
     'Sos un traductor de lenguaje natural a acciones estructuradas para movimientos de stock.',
     'Nunca inventes códigos. Si no estás seguro, devolvé null en el campo correspondiente.',
-    'Si el usuario pide mas de una cosa, devolvé múltiples acciones.',
+    'Si el usuario pide más de una cosa, devolvé múltiples acciones.',
     'La única acción permitida es transferencia_stock (mover entre depósitos).',
     `Contexto actual: ${contexto}.`,
-    'Salida estricta en el esquema JSON indicado.'
+    'Respondé exclusivamente usando el esquema JSON provisto.',
   ].join(' ');
 
-  // Usamos Responses API con salida estructurada (JSON Schema).
   const schema = jsonSchemaForParseResult();
 
   const resp = await client.responses.create({
     model,
     input: [
       { role: 'system', content: system },
-      { role: 'user', content: texto }
+      { role: 'user', content: texto },
     ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: schema
-    }
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'parse_stock_actions',
+        schema: schema,
+      },
+    },
   });
 
-  // Extraer JSON resultante (SDK: output_text o output[...])
+  // La API garantiza JSON válido cuando se usa json_schema
   const txt = resp.output_text;
   const parsed = JSON.parse(txt);
+
+  // Validación fuerte del lado servidor
   const validated = ParseResultSchema.parse(parsed);
 
-  return { parsed: validated, raw: parsed, model };
+  return {
+    parsed: validated,
+    raw: parsed,
+    model,
+  };
 }
+
