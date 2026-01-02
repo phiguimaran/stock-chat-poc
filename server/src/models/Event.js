@@ -13,7 +13,7 @@ const ValidationErrorSchema = new mongoose.Schema({
   campo: { type: String, required: true },
   tipo: { type: String, required: true }, // no_existe, invalido, ...
   valor: { type: String, default: null },
-  sugerencias: { type: [mongoose.Schema.Types.Mixed], default: [] }, // {codigo,nombre}
+  sugerencias: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { _id: false });
 
 const InterpretationSchema = new mongoose.Schema({
@@ -26,9 +26,9 @@ const InterpretationSchema = new mongoose.Schema({
 }, { _id: false });
 
 const CorrectionSchema = new mongoose.Schema({
-  campo: { type: String, required: true }, // articulo/deposito_origen/...
-  valor: { type: mongoose.Schema.Types.Mixed, required: true }, // codigo o cantidad
-  aplicado_por: { type: String, default: 'system' }, // user/admin/system
+  campo: { type: String, required: true },
+  valor: { type: mongoose.Schema.Types.Mixed, required: true },
+  aplicado_por: { type: String, default: 'system' },
   aplicado_at: { type: Date, default: () => new Date() },
 }, { _id: false });
 
@@ -39,7 +39,11 @@ const EventSchema = new mongoose.Schema({
   contexto: { type: String, default: 'stock_movimientos' },
 
   // Input
-  tipo: { type: String, enum: ['texto', 'audio'], required: true },
+  tipo: {
+    type: String,
+    enum: ['texto', 'voz'],
+    required: true
+  },
   texto_original: { type: String, default: null },
   audio_path: { type: String, default: null },
   texto_transcripto: { type: String, default: null },
@@ -62,19 +66,24 @@ const EventSchema = new mongoose.Schema({
     index: true
   },
 
-  // Interpretaciones (historial)
+  // Interpretaciones
   interpretaciones: { type: [InterpretationSchema], default: [] },
 
   // Validación
   validacion_ok: { type: Boolean, default: false },
   validacion_errores: { type: [ValidationErrorSchema], default: [] },
 
-  // Correcciones (historial)
+  // Correcciones
   correcciones: { type: [CorrectionSchema], default: [] },
 
   // Ejecución
-  movimientos_ejecutados: { type: [mongoose.Schema.Types.ObjectId], ref: 'Movement', default: [] },
-  movimientos_fallidos: { type: [mongoose.Schema.Types.Mixed], default: [] }, // {index, error}
+  movimientos_ejecutados: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: 'Movement',
+    default: []
+  },
+  movimientos_fallidos: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
   confirmado_por: { type: String, default: null },
   confirmado_desde: { type: String, enum: ['chat', 'backoffice'], default: null },
   confirmado_at: { type: Date, default: null },
@@ -90,3 +99,4 @@ const EventSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const Event = mongoose.model('Event', EventSchema);
+
