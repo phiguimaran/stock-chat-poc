@@ -1,69 +1,120 @@
-# Stock Chat PoC (Node.js + React + MongoDB + OpenAI)
+# stock-chat-poc
 
-PoC de app conversacional (texto/voz) para generar movimientos de stock **solo con confirmación explícita**.
-Incluye una vista de **Control/Auditoría** para ver pendientes, confirmar/cancelar y hacer **undo**.
+PoC de chat (texto y voz) para registrar **movimientos de stock** en lenguaje natural con **confirmación explícita** antes de ejecutar.
 
-## Componentes
-- `server/` API Node.js (Express) + MongoDB (Mongoose)
-- `client/` React (Vite) con 2 modos:
-  - Conversacional (solo enviar / confirmar / cancelar)
-  - Control/Auditoría (lista filtrable + confirmar/cancelar/undo)
+## Objetivo
+- UI tipo chat para móviles/tablets (también notebooks con micrófono).
+- Usuario envía **texto** o **audio**.
+- Backend:
+  1) transcribe audio (si aplica),
+  2) interpreta el mensaje (LLM → acciones estructuradas),
+  3) valida contra datos reales (artículos/depósitos),
+  4) solicita confirmación,
+  5) ejecuta movimientos al confirmar.
+- Todo queda logueado en un **evento auditable**. El **undo** está pensado para backoffice (no desde el chat del usuario final).
+
+---
+
+## Stack
+- Backend: Node.js + Express + MongoDB (Mongoose)
+- Frontend: React + Vite
+- LLM (parse NL → acciones): OpenAI (Responses API + JSON Schema)
+- STT (voz→texto): **configurable**
+  - Local (CPU): `faster-whisper`
+  - OpenAI (API): transcribe (cuando se use)
+
+---
+
+## Estructura
+- `client/` Frontend (Vite/React)
+- `server/` Backend (Express/Mongo)
+- `server/stt/` STT local (Python + faster-whisper)
+- `server/tmp/` temporales para audio (NO se versiona)
+
+---
 
 ## Requisitos
-- Node.js 18+ (recomendado 20+)
-- MongoDB (local o remoto)
-- Una API key de OpenAI
+- Node.js **20 LTS**
+- MongoDB (servicio local en el servidor)
+- Para STT local:
+  - Python 3 + venv
+  - `faster-whisper` (CPU)
 
-## Configuración rápida
+---
+
+## Variables de entorno (backend)
+Archivo: `server/.env`
+
+```env
+PORT=3001
+MONGODB_URI=mongodb://stockchat:stockchat123@127.0.0.1:27017/stock_chat_poc
+
+# LLM parse (texto→acciones)
+OPENAI_API_KEY=...
+OPENAI_PARSE_MODEL=gpt-4o-mini
+
+# STT (voz→texto)
+STT_PROVIDER=local        # local | openai
+STT_QUALITY=standard      # basic | standard
+```
+
+### STT_PROVIDER / STT_QUALITY
+- `STT_PROVIDER=local`
+  - `STT_QUALITY=basic`    → Whisper `tiny` (rápido, menor precisión)
+  - `STT_QUALITY=standard` → Whisper `small` (mejor balance CPU/calidad)
+- `STT_PROVIDER=openai`
+  - `STT_QUALITY=basic`    → `gpt-4o-mini-transcribe`
+  - `STT_QUALITY=standard` → `gpt-4o-transcribe`
+
+---
+
+## Instalación / ejecución (dev)
 
 ### 1) Backend
 ```bash
 cd server
-cp .env.example .env
 npm install
 npm run dev
 ```
 
-Variables en `.env`:
-- `OPENAI_API_KEY` (obligatoria)
-- `MONGODB_URI` (ej: `mongodb://127.0.0.1:27017/stock_chat_poc`)
-- `PORT` (por defecto 3001)
-- `UPLOAD_DIR` (por defecto `./uploads`)
-- `OPENAI_TRANSCRIBE_MODEL` (por defecto `gpt-4o-mini-transcribe`)
-- `OPENAI_PARSE_MODEL` (por defecto `gpt-4o-mini`)
-
-### 2) Seed (artículos y depósitos de ejemplo)
-En otra terminal:
+Health check:
 ```bash
-cd server
-npm run seed
+curl http://localhost:3001/health
 ```
 
-### 3) Frontend
+### 2) Frontend
 ```bash
 cd client
-cp .env.example .env
 npm install
-npm run dev
+npm run dev -- --host
 ```
 
-El frontend apunta al backend con:
-- `VITE_API_BASE_URL` (por defecto `http://localhost:3001`)
+Abrir en navegador:
+- http://localhost:5173
 
-## Flujo (resumen)
-1) Usuario envía texto o audio
-2) Backend:
-   - si audio: transcribe con OpenAI (STT)
-   - interpreta con OpenAI (LLM) -> **acciones[]** estructuradas
-   - valida contra BD (existencia + reglas)
-   - devuelve propuesta + errores/sugerencias
-3) Usuario final solo puede confirmar/cancelar
-4) Vista Control/Auditoría puede:
-   - confirmar/cancelar pendientes
-   - deshacer ejecutados (compensación)
+> Nota (micrófono): normalmente funciona mejor en `localhost`. Si estás en otra máquina por LAN, podés usar un túnel SSH para que el navegador vea `localhost` (ver guía en CONTINUAR_EN_CHAT_NUEVO.md).
 
-## Notas de OpenAI
-- Transcripción: endpoint `audio.transcriptions.create` (modelos tipo `gpt-4o-mini-transcribe`). Ver guía oficial. 
-- Salidas estructuradas: se usa JSON Schema (vía Zod). Ver guía oficial de Structured Outputs.
+---
 
-(Referencias oficiales: OpenAI STT y Structured Outputs) 
+## Flujo del sistema
+1) Usuario envía texto o audio.
+2) Se crea un `Event` en Mongo con:
+   - `tipo: texto` o `voz`
+   - `texto_original` o `audio_path`/`texto_transcripto`
+3) Interpretación (OpenAI parse) → acciones
+4) Validación (lookup contra artículos/depósitos)
+5) Estado `pendiente_confirmacion`
+6) Usuario confirma → ejecución → estados finales:
+   - `ejecutado_completo` / `ejecutado_parcial` / `fallo_ejecucion`
+   - o `cancelado`
+
+---
+
+## Git / versionado
+No versionar:
+- `node_modules/`
+- `server/stt/venv/`
+- `server/tmp/`
+- audios de prueba (`*.wav`, `*.webm`)
+- `.env`
+
