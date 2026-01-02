@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { postTexto, postAudio, confirmar, corregir } from './api.js';
+import { postTexto, postAudio, confirmar } from './api.js';
 
 export default function ChatView({ contexto }) {
   const [texto, setTexto] = useState('');
@@ -7,7 +7,8 @@ export default function ChatView({ contexto }) {
   const [cargando, setCargando] = useState(false);
   const [grabando, setGrabando] = useState(false);
 
-  const mediaRef = useRef(null);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
   const chunksRef = useRef([]);
 
   async function enviarTexto() {
@@ -22,62 +23,64 @@ export default function ChatView({ contexto }) {
     }
   }
 
-  async function iniciarGrabacion() {
-    if (grabando) return;
+  async function toggleGrabacion() {
+    if (!grabando) {
+      // START
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream);
+      chunksRef.current = [];
 
-    chunksRef.current = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
+      recorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
 
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      const form = new FormData();
-      form.append('audio', blob, 'audio.webm');
-      form.append('contexto', contexto);
-      form.append('session_id', 'web');
-      form.append('user_id', 'web');
+      recorder.onstop = async () => {
+        if (chunksRef.current.length === 0) {
+          console.warn('No se capturó audio');
+          stream.getTracks().forEach(t => t.stop());
+          setGrabando(false);
+          return;
+        }
 
-      setCargando(true);
-      try {
-        const r = await postAudio(form);
-        setUltimo(r);
-      } finally {
-        setCargando(false);
-      }
-    };
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'audio/webm'
+        });
 
-    mediaRef.current = mediaRecorder;
-    mediaRecorder.start();
-    setGrabando(true);
-  }
+        setCargando(true);
+        try {
+          const r = await postAudio({ blob, contexto });
+          setUltimo(r);
+        } finally {
+          setCargando(false);
+        }
 
-  function detenerGrabacion() {
-    if (!grabando || !mediaRef.current) return;
-    mediaRef.current.stop();
-    mediaRef.current.stream.getTracks().forEach(t => t.stop());
-    setGrabando(false);
-  }
+        stream.getTracks().forEach(t => t.stop());
+        recorderRef.current = null;
+        streamRef.current = null;
+      };
 
-  async function confirmarUltimo() {
-    if (!ultimo?.evento_id) return;
-    setCargando(true);
-    try {
-      const r = await confirmar(ultimo.evento_id);
-      setUltimo(r);
-    } finally {
-      setCargando(false);
+      recorder.start(250); // 🔑 forzar dataavailable cada 250ms
+      recorderRef.current = recorder;
+      streamRef.current = stream;
+      setGrabando(true);
+    } else {
+      // STOP
+      recorderRef.current?.stop();
+      setGrabando(false);
     }
   }
 
-  async function corregirUltimo() {
+  async function confirmarUltimo(accion) {
     if (!ultimo?.evento_id) return;
     setCargando(true);
     try {
-      const r = await corregir(ultimo.evento_id);
+      const r = await confirmar({
+        evento_id: ultimo.evento_id,
+        accion
+      });
       setUltimo(r);
     } finally {
       setCargando(false);
@@ -91,20 +94,17 @@ export default function ChatView({ contexto }) {
           rows={3}
           value={texto}
           onChange={e => setTexto(e.target.value)}
-          placeholder="Escribí o usá el micrófono…"
+          placeholder="Escribí o grabá un mensaje…"
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button onClick={enviarTexto} disabled={cargando}>
-            Enviar
+            Enviar texto
           </button>
-        <button
-  onClick={grabando ? detenerGrabacion : iniciarGrabacion}
-  disabled={cargando}
->
-  {grabando ? '⏹ Detener grabación' : '🎤 Grabar voz'}
-</button>
 
-	  </div>
+          <button onClick={toggleGrabacion} disabled={cargando}>
+            {grabando ? '⏹ Detener grabación' : '🎤 Grabar voz'}
+          </button>
+        </div>
       </Card>
 
       {ultimo && (
@@ -115,10 +115,10 @@ export default function ChatView({ contexto }) {
 
           {ultimo.requiere_confirmacion && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={confirmarUltimo} disabled={cargando}>
+              <button onClick={() => confirmarUltimo('confirmar')}>
                 Confirmar
               </button>
-              <button onClick={corregirUltimo} disabled={cargando}>
+              <button onClick={() => confirmarUltimo('cancelar')}>
                 Cancelar
               </button>
             </div>

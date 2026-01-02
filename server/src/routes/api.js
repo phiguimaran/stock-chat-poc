@@ -10,20 +10,64 @@ import { handleAdminAction } from './handlers/handleAdminAction.js';
 
 const router = express.Router();
 
-// multer en memoria (audio chico, PoC)
-const upload = multer({ storage: multer.memoryStorage() });
+// ============================
+// MULTER (audio en memoria)
+// ============================
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10 MB, suficiente para PoC
+  }
+});
 
-// ---- MENSAJES ----
-router.post('/mensaje', handleMensaje);
-router.post('/mensaje/voz', upload.single('audio'), handleMensajeVoz);
+// ============================
+// MENSAJES
+// ============================
 
-// ---- CONFIRMACIONES ----
-router.post('/mensaje/confirmar', handleConfirmar);
-router.post('/mensaje/corregir', handleCorreccion);
+// Texto → JSON
+router.post(
+  '/mensaje',
+  express.json(),
+  handleMensaje
+);
 
-// ---- ADMIN ----
-router.get('/admin/eventos', handleAdminList);
-router.post('/admin/eventos/:id/accion', handleAdminAction);
+// Voz → multipart/form-data (SIN express.json)
+router.post(
+  '/mensaje/voz',
+  upload.single('audio'),
+  handleMensajeVoz
+);
+
+// ============================
+// CONFIRMACIONES
+// ============================
+
+router.post(
+  '/mensaje/confirmar',
+  express.json(),
+  handleConfirmar
+);
+
+router.post(
+  '/mensaje/corregir',
+  express.json(),
+  handleCorreccion
+);
+
+// ============================
+// ADMIN
+// ============================
+
+router.get(
+  '/admin/eventos',
+  handleAdminList
+);
+
+router.post(
+  '/admin/eventos/:id/accion',
+  express.json(),
+  handleAdminAction
+);
 
 export default router;
 
